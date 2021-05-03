@@ -1,0 +1,36 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+  "contentVersion": "1.0.0.0",
+  "parameters": {
+      "namePrefix": {
+          "type": "String",
+          "metadata": {
+              "description": "The name prefix used to name Resources"
+          }
+      },
+      "roleNameGuid": {
+          "type": "string",
+          "defaultValue": "[newGuid()]",
+          "metadata": {
+              "description": "A new GUID used to identify the Role Assignment"
+          }
+      }
+  },
+  "variables": {
+      "contributorRoleDefinitionId": "[concat(subscription().Id, '/providers/Microsoft.Authorization/roleDefinitions/', 'b24988ac-6180-42a0-ab88-20f7382dd24c')]",
+      "managedIdentityName": "[concat(parameters('namePrefix'), '-mi')]",
+      "managedIdentityResourceGroup": "[concat(parameters('namePrefix'), '-rg')]"
+  },
+  "resources": [
+      {
+          "type": "Microsoft.Authorization/roleAssignments",
+          "apiVersion": "2020-08-01-preview",
+          "name": "[parameters('roleNameGuid')]",
+          "properties": {
+              "roleDefinitionId": "[variables('contributorRoleDefinitionId')]",
+              "principalId": "[reference(resourceId(variables('managedIdentityResourceGroup'), 'Microsoft.ManagedIdentity/userAssignedIdentities', variables('managedIdentityName')), '2018-11-30').principalId]",
+              "principalType": "ServicePrincipal"
+          }
+      }
+  ]
+}

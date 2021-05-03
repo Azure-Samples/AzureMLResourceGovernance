@@ -1,0 +1,29 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+  "contentVersion": "1.0.0.0",
+  "parameters": {
+    "namePrefix": {
+        "type": "String",
+        "metadata": {
+            "description": "The name prefix used to name Resources"
+        }
+    }
+  },
+  "variables": {
+    "workspaceName": "[concat(parameters('namePrefix'),'-workspace')]"
+  },
+  "resources": [
+    {
+      "type": "microsoft.operationalinsights/workspaces",
+      "apiVersion": "2015-11-01-preview",
+      "name": "[variables('workspaceName')]",
+      "location": "[resourceGroup().location]",
+      "properties": {
+        "sku": {
+          "name": "pergb2018"
+        },
+        "retentionInDays": 30
+      }
+    }
+  ]
+}

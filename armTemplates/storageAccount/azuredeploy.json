@@ -1,0 +1,58 @@
+{
+    "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+    "contentVersion": "1.0.0.0",
+    "parameters": {
+        "namePrefix": {
+            "type": "String",
+            "metadata": {
+                "description": "The name prefix used to name Resources"
+            }
+        }
+    },
+    "variables": {
+        "resourceId": "[resourceId('Microsoft.Storage/storageAccounts', variables('resourceName'))]",
+        "resourceName": "[concat(parameters('namePrefix'), 'stgacct')]",
+        "apiVersion": "[providers('Microsoft.Storage', 'storageAccounts').apiVersions[0]]"
+    },
+    "resources": [
+        {
+            "type": "Microsoft.Storage/storageAccounts",
+            "apiVersion": "2020-08-01-preview",
+            "name": "[variables('resourceName')]",
+            "location": "[resourceGroup().location]",
+            "sku": {
+                "name": "Standard_LRS",
+                "tier": "Standard"
+            },
+            "kind": "StorageV2"
+        },
+        {
+            "type": "Microsoft.Storage/storageAccounts/blobServices/containers",
+            "apiVersion": "2020-08-01-preview",
+            "name": "[concat(variables('resourceName'), '/default/vmexceptions')]",
+            "dependsOn": [
+                "[resourceId('Microsoft.Storage/storageAccounts', variables('resourceName'))]"
+            ],
+            "properties": {
+                "publicAccess": "None"
+            }
+        },
+        {
+            "type": "Microsoft.Storage/storageAccounts/fileServices/shares",
+            "apiVersion": "2020-08-01-preview",
+            "name": "[concat(variables('resourceName'), '/default/aci-code')]",
+            "dependsOn": [
+                "[resourceId('Microsoft.Storage/storageAccounts', variables('resourceName'))]"
+            ],
+            "properties": {
+                "enabledProtocols": "SMB"
+            }
+        }
+    ],
+    "outputs": {
+        "storageAccountKey": {
+            "type": "string",
+            "value": "[listKeys(variables('resourceId'), variables('apiVersion')).keys[0].value]"
+        }
+    }
+}

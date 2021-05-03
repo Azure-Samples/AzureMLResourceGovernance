@@ -1,0 +1,659 @@
+{
+    "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+    "contentVersion": "1.0.0.0",
+    "parameters": {
+        "containerInstanceStopCpu": {
+            "type": "string",
+            "metadata": {
+                "description": "The CPU configuration for the Container Instance"
+            }
+        },
+        "containerInstanceStopMemory": {
+            "type": "string",
+            "metadata": {
+                "description": "The memory configuration for the Container Instance"
+            }
+        },
+        "logicAppStopCount": {
+            "type": "string",
+            "metadata": {
+                "description": "The"
+            }
+        },
+        "logicAppStopTimeout": {
+            "type": "string",
+            "metadata": {
+                "description": "The memory configuration for the Container Instance"
+            }
+        },
+        "logicAppStopTriggerHour": {
+            "type": "string",
+            "metadata": {
+                "description": "The hour when to trigger the Logic App"
+            }
+        },
+        "logicAppStopTriggerMinute": {
+            "type": "string",
+            "metadata": {
+                "description": "The minute when to trigger the Logic App"
+            }
+        },
+        "namePrefix": {
+            "type": "string",
+            "metadata": {
+                "description": "The name prefix used to name Resources"
+            }
+        },
+        "storageAccountKey": {
+            "type": "String",
+            "metadata": {
+                "description": "Storage Account Key"
+            }
+        }
+    },
+    "variables": {
+        "containerInstanceName": "[concat(parameters('namePrefix'), '-stop')]",
+        "diagSettingsName": "[concat(parameters('namePrefix'), '-diagsettings')]",
+        "logicAppName": "[concat(parameters('namePrefix'), '-stop')]",
+        "managedIdentityName": "[concat(parameters('namePrefix'), '-mi')]",
+        "storageAccountName": "[concat(parameters('namePrefix'), 'stgacct')]",
+        "workspaceName": "[concat(parameters('namePrefix'), '-workspace')]"
+    },
+    "resources": [
+        {
+            "type": "Microsoft.Logic/workflows",
+            "apiVersion": "2017-07-01",
+            "name": "[variables('logicAppName')]",
+            "location": "[resourcegroup().location]",
+            "identity": {
+                "type": "SystemAssigned"
+            },
+            "properties": {
+                "state": "Enabled",
+                "definition": {
+                    "$schema": "https://schema.management.azure.com/providers/Microsoft.Logic/schemas/2016-06-01/workflowdefinition.json#",
+                    "contentVersion": "1.0.0.0",
+                    "parameters": {
+                        "$connections": {
+                            "defaultValue": {},
+                            "type": "Object"
+                        }
+                    },
+                    "triggers": {
+                        "Recurrence": {
+                            "recurrence": {
+                                "frequency": "Day",
+                                "interval": 1,
+                                "schedule": {
+                                    "hours": [
+                                        "[parameters('logicAppStopTriggerHour')]"
+                                    ],
+                                    "minutes": [
+                                        "[parameters('logicAppStopTriggerMinute')]"
+                                    ]
+                                },
+                                "startTime": "2020-11-26T00:01:00",
+                                "timeZone": "Pacific Standard Time"
+                            },
+                            "type": "Recurrence"
+                        }
+                    },
+                    "actions": {
+                        "Condition": {
+                            "actions": {
+                                "Create_or_update_a_container_group_with_ENV": {
+                                    "runAfter": {
+                                        "Get_blob_content": [
+                                            "Succeeded"
+                                        ]
+                                    },
+                                    "type": "ApiConnection",
+                                    "inputs": {
+                                        "body": {
+                                            "identity": {
+                                                "type": "UserAssigned",
+                                                "userAssignedIdentities": {
+                                                    "[concat(subscription().id, '/resourceGroups/', resourcegroup().name, '/providers/Microsoft.ManagedIdentity/userAssignedIdentities/', variables('managedIdentityName'))]": {}
+                                                }
+                                            },
+                                            "location": "[resourcegroup().location]",
+                                            "properties": {
+                                                "containers": [
+                                                    {
+                                                        "name": "[variables('containerInstanceName')]",
+                                                        "properties": {
+                                                            "command": [
+                                                                "/bin/bash",
+                                                                "-c",
+                                                                "apk add jq;/aci/code/aml-ci-shutdown.sh"
+                                                            ],
+                                                            "environmentVariables": [
+                                                                {
+                                                                    "name": "CI_EXCEPTION",
+                                                                    "value": "@{body('Get_blob_content')}"
+                                                                }
+                                                            ],
+                                                            "image": "mcr.microsoft.com/azure-cli",
+                                                            "ports": [
+                                                                {
+                                                                    "port": 80,
+                                                                    "protocol": "TCP"
+                                                                }
+                                                            ],
+                                                            "resources": {
+                                                                "requests": {
+                                                                    "cpu": "[parameters('containerInstanceStopCpu')]",
+                                                                    "memoryInGB": "[parameters('containerInstanceStopMemory')]"
+                                                                }
+                                                            },
+                                                            "volumeMounts": [
+                                                                {
+                                                                    "mountPath": "/aci/code/",
+                                                                    "name": "acicode",
+                                                                    "readOnly": false
+                                                                }
+                                                            ]
+                                                        }
+                                                    }
+                                                ],
+                                                "osType": "Linux",
+                                                "restartPolicy": "Never",
+                                                "sku": "Standard",
+                                                "volumes": [
+                                                    {
+                                                        "azureFile": {
+                                                            "readOnly": false,
+                                                            "shareName": "aci-code",
+                                                            "storageAccountKey": "[parameters('storageAccountKey')]",
+                                                            "storageAccountName": "[variables('storageAccountName')]"
+                                                        },
+                                                        "name": "acicode"
+                                                    }
+                                                ]
+                                            }
+                                        },
+                                        "host": {
+                                            "connection": {
+                                                "name": "@parameters('$connections')['containerinstance']['connectionId']"
+                                            }
+                                        },
+                                        "method": "put",
+                                        "path": "[concat(subscription().id, '/resourceGroups/', resourcegroup().name, '/providers/Microsoft.ContainerInstance/containerGroups/@{encodeURIComponent(concat(''', variables('containerInstanceName'),'-''', ',guid()))}')]",
+                                        "queries": {
+                                            "x-ms-api-version": "2019-12-01"
+                                        }
+                                    }
+                                },
+                                "Get_blob_content": {
+                                    "runAfter": {},
+                                    "metadata": {
+                                        "JTJmdm1leGNlcHRpb25zJTJmMjAyMC0xMi0wMy50eHQ=": "/vmexceptions/2020-12-03.txt"
+                                    },
+                                    "type": "ApiConnection",
+                                    "inputs": {
+                                        "host": {
+                                            "connection": {
+                                                "name": "@parameters('$connections')['storageaccount']['connectionId']"
+                                            }
+                                        },
+                                        "method": "get",
+                                        "path": "/datasets/default/files/@{encodeURIComponent(encodeURIComponent('/vmexceptions/',convertFromUtc(utcNow(), 'Pacific Standard Time', 'yyyy-MM-dd'),'.json'))}/content",
+                                        "queries": {
+                                            "inferContentType": true
+                                        }
+                                    }
+                                },
+                                "Until": {
+                                    "actions": {
+                                        "Condition_with_ENV": {
+                                            "actions": {
+                                                "Delete_a_container_group": {
+                                                    "runAfter": {
+                                                        "For_each": [
+                                                            "Succeeded"
+                                                        ]
+                                                    },
+                                                    "type": "ApiConnection",
+                                                    "inputs": {
+                                                        "host": {
+                                                            "connection": {
+                                                                "name": "@parameters('$connections')['containerinstance']['connectionId']"
+                                                            }
+                                                        },
+                                                        "method": "delete",
+                                                        "path": "[concat(subscription().id, '/resourceGroups/', resourcegroup().name, '/providers/Microsoft.ContainerInstance/containerGroups/@{encodeURIComponent(body(''Get_properties_of_a_container_group'')?[''name''])}')]",
+                                                        "queries": {
+                                                            "x-ms-api-version": "2019-12-01"
+                                                        }
+                                                    }
+                                                },
+                                                "For_each": {
+                                                    "foreach": "@body('Get_properties_of_a_container_group')['properties']['containers']",
+                                                    "actions": {
+                                                        "Get_logs_from_a_container_instance": {
+                                                            "runAfter": {},
+                                                            "type": "ApiConnection",
+                                                            "inputs": {
+                                                                "host": {
+                                                                    "connection": {
+                                                                        "name": "@parameters('$connections')['containerinstance']['connectionId']"
+                                                                    }
+                                                                },
+                                                                "method": "get",
+                                                                "path": "[concat(subscription().id, '/resourceGroups/', resourcegroup().name, '/providers/Microsoft.ContainerInstance/containerGroups/@{encodeURIComponent(body(''Get_properties_of_a_container_group'')?[''name''])}/containers/@{encodeURIComponent(items(''For_each'')[''name''])}/logs')]",
+                                                                "queries": {
+                                                                    "x-ms-api-version": "2019-12-01"
+                                                                }
+                                                            }
+                                                        }
+                                                    },
+                                                    "runAfter": {},
+                                                    "type": "Foreach"
+                                                },
+                                                "Set_variable": {
+                                                    "runAfter": {
+                                                        "Delete_a_container_group": [
+                                                            "Succeeded"
+                                                        ]
+                                                    },
+                                                    "type": "SetVariable",
+                                                    "inputs": {
+                                                        "name": "isDone",
+                                                        "value": "@true"
+                                                    }
+                                                }
+                                            },
+                                            "runAfter": {
+                                                "Get_properties_of_a_container_group": [
+                                                    "Succeeded"
+                                                ]
+                                            },
+                                            "else": {
+                                                "actions": {
+                                                    "Delay": {
+                                                        "runAfter": {},
+                                                        "type": "Wait",
+                                                        "inputs": {
+                                                            "interval": {
+                                                                "count": 30,
+                                                                "unit": "Second"
+                                                            }
+                                                        }
+                                                    }
+                                                }
+                                            },
+                                            "expression": {
+                                                "or": [
+                                                    {
+                                                        "equals": [
+                                                            "@body('Get_properties_of_a_container_group')?['properties']?['instanceView']?['state']",
+                                                            "Succeeded"
+                                                        ]
+                                                    },
+                                                    {
+                                                        "equals": [
+                                                            "@body('Get_properties_of_a_container_group')?['properties']?['instanceView']?['state']",
+                                                            "Failed"
+                                                        ]
+                                                    }
+                                                ]
+                                            },
+                                            "type": "If"
+                                        },
+                                        "Get_properties_of_a_container_group": {
+                                            "runAfter": {},
+                                            "type": "ApiConnection",
+                                            "inputs": {
+                                                "host": {
+                                                    "connection": {
+                                                        "name": "@parameters('$connections')['containerinstance']['connectionId']"
+                                                    }
+                                                },
+                                                "method": "get",
+                                                "path": "[concat(subscription().id, '/resourceGroups/', resourcegroup().name, '/providers/Microsoft.ContainerInstance/containerGroups/@{encodeURIComponent(body(''Create_or_update_a_container_group_with_ENV'')?[''name''])}')]",
+                                                "queries": {
+                                                    "x-ms-api-version": "2019-12-01"
+                                                }
+                                            }
+                                        }
+                                    },
+                                    "runAfter": {
+                                        "Create_or_update_a_container_group_with_ENV": [
+                                            "Succeeded"
+                                        ]
+                                    },
+                                    "expression": "@equals(variables('isDone'), true)",
+                                    "limit": {
+                                        "count": "[parameters('logicAppStopCount')]",
+                                        "timeout": "[parameters('logicAppStopTimeout')]"
+                                    },
+                                    "type": "Until"
+                                }
+                            },
+                            "runAfter": {
+                                "Filter_array": [
+                                    "Succeeded"
+                                ]
+                            },
+                            "else": {
+                                "actions": {
+                                    "Create_or_update_a_container_group_without_ENV": {
+                                        "runAfter": {},
+                                        "type": "ApiConnection",
+                                        "inputs": {
+                                            "body": {
+                                                "identity": {
+                                                    "type": "UserAssigned",
+                                                    "userAssignedIdentities": {
+                                                        "[concat(subscription().id, '/resourceGroups/', resourcegroup().name, '/providers/Microsoft.ManagedIdentity/userAssignedIdentities/', variables('managedIdentityName'))]": {}
+                                                    }
+                                                },
+                                                "location": "westus2",
+                                                "properties": {
+                                                    "containers": [
+                                                        {
+                                                            "name": "[variables('containerInstanceName')]",
+                                                            "properties": {
+                                                                "command": [
+                                                                    "/bin/bash",
+                                                                    "-c",
+                                                                    "apk add jq;/aci/code/aml-ci-shutdown.sh"
+                                                                ],
+                                                                "image": "mcr.microsoft.com/azure-cli",
+                                                                "ports": [
+                                                                    {
+                                                                        "port": 80,
+                                                                        "protocol": "TCP"
+                                                                    }
+                                                                ],
+                                                                "resources": {
+                                                                    "requests": {
+                                                                        "cpu": 1,
+                                                                        "memoryInGB": 2
+                                                                    }
+                                                                },
+                                                                "volumeMounts": [
+                                                                    {
+                                                                        "mountPath": "/aci/code/",
+                                                                        "name": "acicode",
+                                                                        "readOnly": false
+                                                                    }
+                                                                ]
+                                                            }
+                                                        }
+                                                    ],
+                                                    "osType": "Linux",
+                                                    "restartPolicy": "OnFailure",
+                                                    "sku": "Standard",
+                                                    "volumes": [
+                                                        {
+                                                            "azureFile": {
+                                                                "readOnly": false,
+                                                                "shareName": "aci-code",
+                                                                "storageAccountKey": "[parameters('storageAccountKey')]",
+                                                                "storageAccountName": "[variables('storageAccountName')]"
+                                                            },
+                                                            "name": "acicode"
+                                                        }
+                                                    ]
+                                                }
+                                            },
+                                            "host": {
+                                                "connection": {
+                                                    "name": "@parameters('$connections')['containerinstance']['connectionId']"
+                                                }
+                                            },
+                                            "method": "put",
+                                            "path": "[concat(subscription().id, '/resourceGroups/', resourcegroup().name, '/providers/Microsoft.ContainerInstance/containerGroups/@{encodeURIComponent(concat(''', variables('containerInstanceName'),'-''', ',guid()))}')]",
+                                            "queries": {
+                                                "x-ms-api-version": "2019-12-01"
+                                            }
+                                        }
+                                    },
+                                    "Until_without_ENV": {
+                                        "actions": {
+                                            "Condition_without_ENV": {
+                                                "actions": {
+                                                    "Delete_a_container_group_without_ENV": {
+                                                        "runAfter": {
+                                                            "For_each_without_ENV": [
+                                                                "Succeeded"
+                                                            ]
+                                                        },
+                                                        "type": "ApiConnection",
+                                                        "inputs": {
+                                                            "host": {
+                                                                "connection": {
+                                                                    "name": "@parameters('$connections')['containerinstance']['connectionId']"
+                                                                }
+                                                            },
+                                                            "method": "delete",
+                                                            "path": "[concat(subscription().id, '/resourceGroups/', resourcegroup().name, '/providers/Microsoft.ContainerInstance/containerGroups/@{encodeURIComponent(body(''Get_properties_of_a_container_group_without_ENV'')?[''name''])}')]",
+                                                            "queries": {
+                                                                "x-ms-api-version": "2019-12-01"
+                                                            }
+                                                        }
+                                                    },
+                                                    "For_each_without_ENV": {
+                                                        "foreach": "@body('Get_properties_of_a_container_group_without_ENV')['properties']['containers']",
+                                                        "actions": {
+                                                            "Get_logs_from_a_container_instance_without_ENV": {
+                                                                "runAfter": {},
+                                                                "type": "ApiConnection",
+                                                                "inputs": {
+                                                                    "host": {
+                                                                        "connection": {
+                                                                            "name": "@parameters('$connections')['containerinstance']['connectionId']"
+                                                                        }
+                                                                    },
+                                                                    "method": "get",
+                                                                    "path": "[concat(subscription().id, '/resourceGroups/', resourcegroup().name, '/providers/Microsoft.ContainerInstance/containerGroups/@{encodeURIComponent(body(''Get_properties_of_a_container_group_without_ENV'')?[''name''])}/containers/@{encodeURIComponent(items(''For_each_without_ENV'')[''name''])}/logs')]",
+                                                                    "queries": {
+                                                                        "x-ms-api-version": "2019-12-01"
+                                                                    }
+                                                                }
+                                                            }
+                                                        },
+                                                        "runAfter": {},
+                                                        "type": "Foreach"
+                                                    },
+                                                    "Set_variable_without_ENV": {
+                                                        "runAfter": {
+                                                            "Delete_a_container_group_without_ENV": [
+                                                                "Succeeded"
+                                                            ]
+                                                        },
+                                                        "type": "SetVariable",
+                                                        "inputs": {
+                                                            "name": "isDone",
+                                                            "value": "@true"
+                                                        }
+                                                    }
+                                                },
+                                                "runAfter": {
+                                                    "Get_properties_of_a_container_group_without_ENV": [
+                                                        "Succeeded"
+                                                    ]
+                                                },
+                                                "else": {
+                                                    "actions": {
+                                                        "Delay_without_ENV": {
+                                                            "runAfter": {},
+                                                            "type": "Wait",
+                                                            "inputs": {
+                                                                "interval": {
+                                                                    "count": 30,
+                                                                    "unit": "Second"
+                                                                }
+                                                            }
+                                                        }
+                                                    }
+                                                },
+                                                "expression": {
+                                                    "or": [
+                                                        {
+                                                            "equals": [
+                                                                "@body('Get_properties_of_a_container_group_without_ENV')?['properties']?['instanceView']?['state']",
+                                                                "Succeeded"
+                                                            ]
+                                                        },
+                                                        {
+                                                            "equals": [
+                                                                "@body('Get_properties_of_a_container_group_without_ENV')?['properties']?['instanceView']?['state']",
+                                                                "Failed"
+                                                            ]
+                                                        }
+                                                    ]
+                                                },
+                                                "type": "If"
+                                            },
+                                            "Get_properties_of_a_container_group_without_ENV": {
+                                                "runAfter": {},
+                                                "type": "ApiConnection",
+                                                "inputs": {
+                                                    "host": {
+                                                        "connection": {
+                                                            "name": "@parameters('$connections')['containerinstance']['connectionId']"
+                                                        }
+                                                    },
+                                                    "method": "get",
+                                                    "path": "[concat(subscription().id, '/resourceGroups/', resourcegroup().name, '/providers/Microsoft.ContainerInstance/containerGroups/@{encodeURIComponent(body(''Create_or_update_a_container_group_without_ENV'')?[''name''])}')]",
+                                                    "queries": {
+                                                        "x-ms-api-version": "2019-12-01"
+                                                    }
+                                                }
+                                            }
+                                        },
+                                        "runAfter": {
+                                            "Create_or_update_a_container_group_without_ENV": [
+                                                "Succeeded"
+                                            ]
+                                        },
+                                        "expression": "@equals(variables('isDone'), true)",
+                                        "limit": {
+                                            "count": "[parameters('logicAppStopCount')]",
+                                            "timeout": "[parameters('logicAppStopTimeout')]"
+                                        },
+                                        "type": "Until"
+                                    }
+                                }
+                            },
+                            "expression": {
+                                "and": [
+                                    {
+                                        "equals": [
+                                            "@empty(body('Filter_array'))",
+                                            "@false"
+                                        ]
+                                    }
+                                ]
+                            },
+                            "type": "If"
+                        },
+                        "Filter_array": {
+                            "runAfter": {
+                                "List_blobs": [
+                                    "Succeeded"
+                                ]
+                            },
+                            "type": "Query",
+                            "inputs": {
+                                "from": "@body('List_blobs')?['value']",
+                                "where": "@contains(item()?['Name'], convertFromUtc(utcNow(), 'Pacific Standard Time', 'yyyy-MM-dd'))"
+                            }
+                        },
+                        "Initialize_variable": {
+                            "runAfter": {},
+                            "type": "InitializeVariable",
+                            "inputs": {
+                                "variables": [
+                                    {
+                                        "name": "isDone",
+                                        "type": "boolean",
+                                        "value": "@false"
+                                    }
+                                ]
+                            }
+                        },
+                        "List_blobs": {
+                            "runAfter": {
+                                "Initialize_variable": [
+                                    "Succeeded"
+                                ]
+                            },
+                            "type": "ApiConnection",
+                            "inputs": {
+                                "host": {
+                                    "connection": {
+                                        "name": "@parameters('$connections')['storageaccount']['connectionId']"
+                                    }
+                                },
+                                "method": "get",
+                                "path": "/datasets/default/foldersV2/vmexceptions",
+                                "queries": {
+                                    "nextPageMarker": "",
+                                    "useFlatListing": false
+                                }
+                            }
+                        }
+                    }
+                },
+                "parameters": {
+                    "$connections": {
+                        "value": {
+                            "containerinstance": {
+                                "connectionId": "[resourceId('Microsoft.Web/connections', 'containerinstance')]",
+                                "connectionName": "containerinstance",
+                                "connectionProperties": {
+                                    "authentication": {
+                                        "type": "ManagedServiceIdentity"
+                                    }
+                                },
+                                "id": "[concat(subscription().id, '/providers/Microsoft.Web/locations/', resourceGroup().location, '/managedApis/aci')]"
+                            },
+                            "storageaccount": {
+                                "connectionId": "[resourceId('Microsoft.Web/connections', 'storageaccount')]",
+                                "connectionName": "storageaccount",
+                                "id": "[concat(subscription().id, '/providers/Microsoft.Web/locations/', resourceGroup().location, '/managedApis/azureblob')]"
+                            }
+                        }
+                    }
+                }
+            },
+            "resources": [
+                {
+                    "type": "providers/diagnosticSettings",
+                    "name": "[concat('Microsoft.Insights/', variables('diagSettingsName'))]",
+                    "dependsOn": [
+                        "[resourceId('Microsoft.Logic/workflows', variables('logicAppName'))]"
+                    ],
+                    "apiVersion": "2017-05-01-preview",
+                    "properties": {
+                        "name": "[variables('workspaceName')]",
+                        "workspaceId": "[resourceId('microsoft.operationalinsights/workspaces', variables('workspaceName'))]",
+                        "logs": [
+                            {
+                                "category": "WorkflowRuntime",
+                                "enabled": true,
+                                "retentionPolicy": {
+                                    "days": 0,
+                                    "enabled": false
+                                }
+                            }
+                        ],
+                        "metrics": [
+                            {
+                                "timeGrain": "PT1M",
+                                "enabled": true,
+                                "retentionPolicy": {
+                                    "enabled": false,
+                                    "days": 0
+                                }
+                            }
+                        ]
+                    }
+                }
+            ]
+        }
+    ]
+}

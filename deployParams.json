@@ -1,0 +1,18 @@
+{
+  "containerInstanceCreateCpu": "2",
+  "containerInstanceCreateMemory": "4",
+  "containerInstanceStopCpu": "2",
+  "containerInstanceStopMemory": "4",
+  "location": "westus2",
+  "logicAppCreateCount": "60",
+  "logicAppCreateTimeout": "PT1H",
+  "logicAppStopCount": "60",
+  "logicAppStopTimeout": "PT1H",
+  "logicAppStopTriggerHour": "23",
+  "logicAppStopTriggerMinute": "00",
+  "Name": "azmlci",
+  "managedResourceGroups": [
+    "mtcs-dev-azml-rg",
+    "mtcs-stg-azml-rg"
+  ]
+}

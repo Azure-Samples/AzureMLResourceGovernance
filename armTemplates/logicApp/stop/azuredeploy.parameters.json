@@ -1,0 +1,30 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentParameters.json#",
+  "contentVersion": "1.0.0.0",
+  "parameters": {
+    "containerInstanceStopCpu": {
+      "value": "2"
+    },
+    "containerInstanceStopMemory": {
+      "value": "4"
+    },
+    "logicAppStopCount": {
+      "value": "60"
+    },
+    "logicAppStopTimeout": {
+      "value": "PT1H"
+    },
+    "logicAppStopTriggerHour": {
+      "value": "23"
+    },
+    "logicAppStopTriggerMinute": {
+      "value": "00"
+    },
+    "namePrefix": {
+      "value": "azmlci"
+    },
+    "storageAccountKey": {
+      "value": ""
+    }
+  }
+}

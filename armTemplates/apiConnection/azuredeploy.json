@@ -1,0 +1,52 @@
+{
+    "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+    "contentVersion": "1.0.0.0",
+    "parameters": {
+        "namePrefix": {
+            "type": "string",
+            "metadata": {
+                "description": "The name prefix used to name Resources"
+            }
+        },
+        "storageAccountKey": {
+            "type": "String",
+            "metadata": {
+                "description": "Storage Account Key"
+            }
+        }
+    },
+    "variables": {
+        "storageAccountName": "[concat(parameters('namePrefix'), 'stgacct')]"
+    },
+    "resources": [
+        {
+            "type": "Microsoft.Web/connections",
+            "apiVersion": "2016-06-01",
+            "name": "containerinstance",
+            "location": "[resourcegroup().location]",
+            "properties": {
+                "api": {
+                    "id": "[concat(subscription().id, '/providers/Microsoft.Web/locations/', resourceGroup().location, '/managedApis/aci')]"
+                },
+                "displayName": "Azure Container Instance Connection",
+                "parameterValueType": "Alternative"
+            }
+        },
+        {
+            "type": "Microsoft.Web/connections",
+            "apiVersion": "2016-06-01",
+            "name": "storageaccount",
+            "location": "[resourcegroup().location]",
+            "properties": {
+                "api": {
+                    "id": "[concat(subscription().id, '/providers/Microsoft.Web/locations/', resourceGroup().location, '/managedApis/azureblob')]"
+                },
+                "displayName": "Azure Storage Account Connection",
+                "parameterValues": {
+                    "accountName": "[variables('storageAccountName')]",
+                    "accessKey": "[parameters('storageAccountKey')]"
+                }
+            }
+        }
+    ]
+}

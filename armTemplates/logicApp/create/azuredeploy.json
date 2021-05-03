@@ -1,0 +1,391 @@
+{
+    "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+    "contentVersion": "1.0.0.0",
+    "parameters": {
+        "containerInstanceCreateCpu": {
+            "type": "string",
+            "metadata": {
+                "description": "The CPU configuration for the Container Instance"
+            }
+        },
+        "containerInstanceCreateMemory": {
+            "type": "string",
+            "metadata": {
+                "description": "The memory configuration for the Container Instance"
+            }
+        },
+        "logicAppCreateCount": {
+            "type": "string",
+            "metadata": {
+                "description": "The"
+            }
+        },
+        "logicAppCreateTimeout": {
+            "type": "string",
+            "metadata": {
+                "description": "The memory configuration for the Container Instance"
+            }
+        },
+        "namePrefix": {
+            "type": "string",
+            "metadata": {
+                "description": "The name prefix used to name Resources"
+            }
+        },
+        "storageAccountKey": {
+            "type": "String",
+            "metadata": {
+                "description": "Storage Account Key"
+            }
+        }
+    },
+    "variables": {
+        "containerInstanceName": "[concat(parameters('namePrefix'), '-create')]",
+        "diagSettingsName": "[concat(parameters('namePrefix'), '-diagsettings')]",
+        "logicAppName": "[concat(parameters('namePrefix'), '-create')]",
+        "managedIdentityName": "[concat(parameters('namePrefix'), '-mi')]",
+        "storageAccountName": "[concat(parameters('namePrefix'), 'stgacct')]",
+        "workspaceName": "[concat(parameters('namePrefix'), '-workspace')]"
+    },
+    "resources": [
+        {
+            "type": "Microsoft.Logic/workflows",
+            "apiVersion": "2017-07-01",
+            "name": "[variables('logicAppName')]",
+            "location": "[resourcegroup().location]",
+            "identity": {
+                "type": "SystemAssigned"
+            },
+            "properties": {
+                "state": "Enabled",
+                "definition": {
+                    "$schema": "https://schema.management.azure.com/providers/Microsoft.Logic/schemas/2016-06-01/workflowdefinition.json#",
+                    "contentVersion": "1.0.0.0",
+                    "parameters": {
+                        "$connections": {
+                            "defaultValue": {},
+                            "type": "Object"
+                        }
+                    },
+                    "triggers": {
+                        "manual": {
+                            "type": "Request",
+                            "kind": "Http",
+                            "inputs": {
+                                "schema": {
+                                    "items": {
+                                        "properties": {
+                                            "Name": {
+                                                "type": "string"
+                                            },
+                                            "Resource-group": {
+                                                "type": "string"
+                                            },
+                                            "TenantID": {
+                                                "type": "string"
+                                            },
+                                            "UserID": {
+                                                "type": "string"
+                                            },
+                                            "Vm-size": {
+                                                "type": "string"
+                                            },
+                                            "Workspace-name": {
+                                                "type": "string"
+                                            }
+                                        },
+                                        "required": [
+                                            "Name",
+                                            "Vm-size",
+                                            "Resource-group",
+                                            "Workspace-name",
+                                            "TenantID",
+                                            "UserID"
+                                        ],
+                                        "type": "object"
+                                    },
+                                    "type": "array"
+                                }
+                            }
+                        }
+                    },
+                    "actions": {
+                        "Create_or_update_a_container_group": {
+                            "runAfter": {
+                                "Initialize_variable": [
+                                    "Succeeded"
+                                ]
+                            },
+                            "type": "ApiConnection",
+                            "inputs": {
+                                "body": {
+                                    "identity": {
+                                        "type": "UserAssigned",
+                                        "userAssignedIdentities": {
+                                            "[concat(subscription().id, '/resourceGroups/', resourcegroup().name, '/providers/Microsoft.ManagedIdentity/userAssignedIdentities/', variables('managedIdentityName'))]": {}
+                                        }
+                                    },
+                                    "location": "[resourcegroup().location]",
+                                    "properties": {
+                                        "containers": [
+                                            {
+                                                "name": "[variables('containerInstanceName')]",
+                                                "properties": {
+                                                    "command": [
+                                                        "/bin/bash",
+                                                        "-c",
+                                                        "apk add jq;/aci/code/aml-ci-create.sh"
+                                                    ],
+                                                    "environmentVariables": [
+                                                        {
+                                                            "name": "CI_INPUTDATA",
+                                                            "value": "@{triggerBody()}"
+                                                        }
+                                                    ],
+                                                    "image": "mcr.microsoft.com/azure-cli",
+                                                    "ports": [
+                                                        {
+                                                            "port": 80,
+                                                            "protocol": "TCP"
+                                                        }
+                                                    ],
+                                                    "resources": {
+                                                        "requests": {
+                                                            "cpu": "[parameters('containerInstanceCreateCpu')]",
+                                                            "memoryInGB": "[parameters('containerInstanceCreateMemory')]"
+                                                        }
+                                                    },
+                                                    "volumeMounts": [
+                                                        {
+                                                            "mountPath": "/aci/code/",
+                                                            "name": "acicode",
+                                                            "readOnly": false
+                                                        }
+                                                    ]
+                                                }
+                                            }
+                                        ],
+                                        "osType": "Linux",
+                                        "restartPolicy": "Never",
+                                        "sku": "Standard",
+                                        "volumes": [
+                                            {
+                                                "azureFile": {
+                                                    "readOnly": false,
+                                                    "shareName": "aci-code",
+                                                    "storageAccountKey": "[parameters('storageAccountKey')]",
+                                                    "storageAccountName": "[variables('storageAccountName')]"
+                                                },
+                                                "name": "acicode"
+                                            }
+                                        ]
+                                    }
+                                },
+                                "host": {
+                                    "connection": {
+                                        "name": "@parameters('$connections')['containerinstance']['connectionId']"
+                                    }
+                                },
+                                "method": "put",
+                                "path": "[concat(subscription().id, '/resourceGroups/', resourcegroup().name, '/providers/Microsoft.ContainerInstance/containerGroups/@{encodeURIComponent(concat(''', variables('containerInstanceName'),'-''', ',guid()))}')]",
+                                "queries": {
+                                    "x-ms-api-version": "2019-12-01"
+                                }
+                            }
+                        },
+                        "Initialize_variable": {
+                            "runAfter": {},
+                            "type": "InitializeVariable",
+                            "inputs": {
+                                "variables": [
+                                    {
+                                        "name": "isDone",
+                                        "type": "boolean",
+                                        "value": "@false"
+                                    }
+                                ]
+                            }
+                        },
+                        "Until": {
+                            "actions": {
+                                "Condition": {
+                                    "actions": {
+                                        "Delete_a_container_group": {
+                                            "runAfter": {
+                                                "For_each": [
+                                                    "Succeeded"
+                                                ]
+                                            },
+                                            "type": "ApiConnection",
+                                            "inputs": {
+                                                "host": {
+                                                    "connection": {
+                                                        "name": "@parameters('$connections')['containerinstance']['connectionId']"
+                                                    }
+                                                },
+                                                "method": "delete",
+                                                "path": "[concat(subscription().id, '/resourceGroups/', resourcegroup().name, '/providers/Microsoft.ContainerInstance/containerGroups/@{encodeURIComponent(body(''Get_properties_of_a_container_group'')?[''name''])}')]",
+                                                "queries": {
+                                                    "x-ms-api-version": "2019-12-01"
+                                                }
+                                            }
+                                        },
+                                        "For_each": {
+                                            "foreach": "@body('Get_properties_of_a_container_group')['properties']['containers']",
+                                            "actions": {
+                                                "Get_logs_from_a_container_instance": {
+                                                    "runAfter": {},
+                                                    "type": "ApiConnection",
+                                                    "inputs": {
+                                                        "host": {
+                                                            "connection": {
+                                                                "name": "@parameters('$connections')['containerinstance']['connectionId']"
+                                                            }
+                                                        },
+                                                        "method": "get",
+                                                        "path": "[concat(subscription().id, '/resourceGroups/', resourcegroup().name, '/providers/Microsoft.ContainerInstance/containerGroups/@{encodeURIComponent(body(''Get_properties_of_a_container_group'')?[''name''])}/containers/@{encodeURIComponent(items(''For_each'')[''name''])}/logs')]",
+                                                        "queries": {
+                                                            "x-ms-api-version": "2019-12-01"
+                                                        }
+                                                    }
+                                                }
+                                            },
+                                            "runAfter": {},
+                                            "type": "Foreach"
+                                        },
+                                        "Set_variable": {
+                                            "runAfter": {
+                                                "Delete_a_container_group": [
+                                                    "Succeeded"
+                                                ]
+                                            },
+                                            "type": "SetVariable",
+                                            "inputs": {
+                                                "name": "isDone",
+                                                "value": "@true"
+                                            }
+                                        }
+                                    },
+                                    "runAfter": {
+                                        "Get_properties_of_a_container_group": [
+                                            "Succeeded"
+                                        ]
+                                    },
+                                    "else": {
+                                        "actions": {
+                                            "Delay": {
+                                                "runAfter": {},
+                                                "type": "Wait",
+                                                "inputs": {
+                                                    "interval": {
+                                                        "count": 60,
+                                                        "unit": "Second"
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    },
+                                    "expression": {
+                                        "or": [
+                                            {
+                                                "equals": [
+                                                    "@body('Get_properties_of_a_container_group')?['properties']?['instanceView']?['state']",
+                                                    "Succeeded"
+                                                ]
+                                            },
+                                            {
+                                                "equals": [
+                                                    "@body('Get_properties_of_a_container_group')?['properties']?['instanceView']?['state']",
+                                                    "Failed"
+                                                ]
+                                            }
+                                        ]
+                                    },
+                                    "type": "If"
+                                },
+                                "Get_properties_of_a_container_group": {
+                                    "runAfter": {},
+                                    "type": "ApiConnection",
+                                    "inputs": {
+                                        "host": {
+                                            "connection": {
+                                                "name": "@parameters('$connections')['containerinstance']['connectionId']"
+                                            }
+                                        },
+                                        "method": "get",
+                                        "path": "[concat(subscription().id, '/resourceGroups/', resourcegroup().name, '/providers/Microsoft.ContainerInstance/containerGroups/@{encodeURIComponent(body(''Create_or_update_a_container_group'')?[''name''])}')]",
+                                        "queries": {
+                                            "x-ms-api-version": "2019-12-01"
+                                        }
+                                    }
+                                }
+                            },
+                            "runAfter": {
+                                "Create_or_update_a_container_group": [
+                                    "Succeeded"
+                                ]
+                            },
+                            "expression": "@equals(variables('isDone'), true)",
+                            "limit": {
+                                "count": "[parameters('logicAppCreateCount')]",
+                                "timeout": "[parameters('logicAppCreateTimeout')]"
+                            },
+                            "type": "Until"
+                        }
+                    },
+                    "outputs": {}
+                },
+                "parameters": {
+                    "$connections": {
+                        "value": {
+                            "containerinstance": {
+                                "connectionId": "[resourceId('Microsoft.Web/connections', 'containerinstance')]",
+                                "connectionName": "containerinstance",
+                                "connectionProperties": {
+                                    "authentication": {
+                                        "type": "ManagedServiceIdentity"
+                                    }
+                                },
+                                "id": "[concat(subscription().id, '/providers/Microsoft.Web/locations/', resourceGroup().location, '/managedApis/aci')]"
+                            }
+                        }
+                    }
+                }
+            },
+            "resources": [
+                {
+                    "type": "providers/diagnosticSettings",
+                    "name": "[concat('Microsoft.Insights/', variables('diagSettingsName'))]",
+                    "dependsOn": [
+                        "[resourceId('Microsoft.Logic/workflows', variables('logicAppName'))]"
+                    ],
+                    "apiVersion": "2017-05-01-preview",
+                    "properties": {
+                        "name": "[variables('workspaceName')]",
+                        "workspaceId": "[resourceId('microsoft.operationalinsights/workspaces', variables('workspaceName'))]",
+                        "logs": [
+                            {
+                                "category": "WorkflowRuntime",
+                                "enabled": true,
+                                "retentionPolicy": {
+                                    "days": 0,
+                                    "enabled": false
+                                }
+                            }
+                        ],
+                        "metrics": [
+                            {
+                                "timeGrain": "PT1M",
+                                "enabled": true,
+                                "retentionPolicy": {
+                                    "enabled": false,
+                                    "days": 0
+                                }
+                            }
+                        ]
+                    }
+                }
+            ]
+        }
+    ]
+}

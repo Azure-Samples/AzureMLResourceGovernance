@@ -1,0 +1,54 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+  "contentVersion": "1.0.0.0",
+  "parameters": {
+      "namePrefix": {
+          "type": "String",
+          "metadata": {
+              "description": "The name prefix used to name Resources"
+          }
+      },
+      "createRoleNameGuid": {
+          "type": "string",
+          "defaultValue": "[newGuid()]",
+          "metadata": {
+              "description": "A new GUID used to identify the Role Assignment for the CI Create Logic App"
+          }
+      },
+      "stopRoleNameGuid": {
+          "type": "string",
+          "defaultValue": "[newGuid()]",
+          "metadata": {
+              "description": "A new GUID used to identify the Role Assignment for the CI Create Logic App"
+          }
+      }
+  },
+  "variables": {
+      "contributorRoleDefinitionId": "[concat(subscription().id, '/providers/Microsoft.Authorization/roleDefinitions/', 'b24988ac-6180-42a0-ab88-20f7382dd24c')]",
+      "logicAppCreateName": "[concat(parameters('namePrefix'), '-create')]",
+      "logicAppStopName": "[concat(parameters('namePrefix'), '-stop')]",
+      "logicAppResourceGroupName": "[concat(parameters('namePrefix'), '-rg')]"
+  },
+  "resources": [
+      {
+          "type": "Microsoft.Authorization/roleAssignments",
+          "apiVersion": "2020-08-01-preview",
+          "name": "[parameters('createRoleNameGuid')]",
+          "properties": {
+              "roleDefinitionId": "[variables('contributorRoleDefinitionId')]",
+              "principalId": "[reference(concat(subscription().id, '/resourceGroups/', variables('logicAppResourceGroupName'), '/providers/Microsoft.Logic/workflows/', variables('logicAppCreateName')), '2017-07-01', 'Full').identity.principalId]",
+              "principalType": "ServicePrincipal"
+          }          
+      },
+      {
+          "type": "Microsoft.Authorization/roleAssignments",
+          "apiVersion": "2020-08-01-preview",
+          "name": "[parameters('stopRoleNameGuid')]",
+          "properties": {
+              "roleDefinitionId": "[variables('contributorRoleDefinitionId')]",
+              "principalId": "[reference(concat(subscription().id, '/resourceGroups/', variables('logicAppResourceGroupName'), '/providers/Microsoft.Logic/workflows/', variables('logicAppStopName')), '2017-07-01', 'Full').identity.principalId]",
+              "principalType": "ServicePrincipal"
+          }          
+      }
+  ]
+}
